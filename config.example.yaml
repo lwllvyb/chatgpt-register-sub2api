@@ -1,0 +1,66 @@
+mail:
+  providers:
+    - type: outlook_token
+      enable: true
+      label: Outlook Pool
+      mode: auto
+      imap_host: outlook.office365.com
+      message_limit: 10
+      # false: one ChatGPT account per Outlook mailbox
+      # true: main address + aliases, limited by alias_limit_per_mailbox
+      alias_enabled: false
+      alias_limit_per_mailbox: 6
+      mailboxes: |
+        user1@outlook.com----password1----client_id_1----refresh_token_1
+        user2@hotmail.com----password2----client_id_2----refresh_token_2
+    - type: gmail_oauth
+      enable: false
+      label: Gmail OAuth Pool
+      imap_host: imap.gmail.com
+      message_limit: 10
+      mailboxes: |
+        user1@gmail.com----google_client_id----google_client_secret----google_refresh_token
+  request_timeout: 30
+  wait_timeout: 45
+  wait_interval: 3
+  alias_enabled: false
+  alias_limit_per_mailbox: 6
+
+proxy:
+  url: "socks5://127.0.0.1:1080"
+  flaresolverr_url: ""
+
+registration:
+  threads: 3
+  total: 10
+
+parallel:
+  join_threads: 3
+  refresh_threads: 3
+  login_threads: 1
+
+workspace:
+  enabled: true
+  ids:
+    - "your-k12-workspace-uuid"
+  # accept: plain invite accept; request: plain request; k12_request: browser-like K12 page request
+  route: k12_request
+  re_login_enabled: false
+  export_plan_type: k12
+  max_retries: 3
+  retry_backoff_ms: 5000
+
+sub2api:
+  enabled: true
+  output_file: "sub2api_bundle.json"
+  # auto: follow workspace.re_login_enabled; true: force team-only; false: allow personal tokens
+  require_team_tokens: auto
+
+output:
+  # Full `run` outputs go under runs/YYYYMMDD-HHMMSS_<count>_accounts/
+  archive_runs: true
+  runs_dir: runs
+
+logging:
+  level: INFO
+  file: ""
