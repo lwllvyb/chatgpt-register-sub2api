@@ -1,13 +1,45 @@
-## 功能
+# chatgpt-register-sub2api
 
-- Outlook OAuth 邮箱池：`email----password----client_id----refresh_token`
-- Gmail OAuth 邮箱池：`email----client_id----client_secret----refresh_token`
-- Outlook `+数字` 别名扩展，例如 `user+1@outlook.com`
-- 工作空间加入/申请流程
-- 账号上下文刷新和 K12/workspace 计划识别
-- Sub2API 格式 JSON 导出
-- 注册、加入工作空间、刷新、导出阶段支持并发
-- 每次完整运行自动归档到时间戳目录
+`chatgpt-register-sub2api` 是一个用于自动化注册流程、刷新账号工作空间上下文，并导出 Sub2API 兼容 JSON 的命令行工具。
+
+项目支持 Outlook/Gmail OAuth 邮箱池、Outlook plus alias、workspace/K12 上下文检查、并发执行和结果归档。仓库中的配置均为脱敏示例，不包含真实邮箱、密码、token、workspace ID 或运行结果。
+
+> 请仅在你有权使用的邮箱、账号和工作空间中运行本工具，并自行确认相关服务条款和合规要求。
+
+## 功能特性
+
+- 支持 Outlook OAuth 邮箱池接收验证码
+- 支持 Gmail OAuth/IMAP 邮箱池接收验证码
+- 支持 Outlook `+数字` 别名扩展
+- 支持注册、workspace 加入/申请、refresh/check、导出完整流水线
+- 支持 K12/workspace 上下文识别，避免把未确认的 personal/free 上下文误导出
+- 支持注册、加入、刷新等阶段并发配置
+- 支持按运行时间和账号数量归档输出文件
+- 支持 Sub2API 格式 JSON 导出
+
+## 工作流程
+
+```text
+邮箱池 -> 注册账号 -> 加入/申请 workspace -> refresh/check 账号上下文 -> 导出 Sub2API JSON
+```
+
+完整运行后，默认会在 `runs/` 下生成独立目录：
+
+```text
+runs/
+  20260706-093012_6_accounts/
+    registered_accounts.json
+    sub2api_bundle.json
+    test_run.log
+```
+
+跨运行共享的邮箱状态文件保存在：
+
+```text
+data/outlook_token_state.json
+```
+
+它用于记录 Outlook 主邮箱和别名的 `used`、`failed`、`in_use` 状态，防止后续注册重复使用同一个邮箱地址。
 
 ## 安装
 
@@ -22,187 +54,48 @@ pip install -e .
 Windows PowerShell：
 
 ```powershell
+git clone <this-repo>
+cd chatgpt-register-sub2api
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -e .
 ```
 
-依赖很少：
+依赖：
 
 - `curl-cffi`
 - `pyyaml`
 
 ## 快速开始
 
-生成本地配置：
+生成本地配置文件：
 
 ```bash
 chatgpt-register init
 ```
 
-编辑生成的 `config.yaml`，填入自己的邮箱池、代理和 workspace ID，然后运行：
+编辑生成的 `config.yaml`，至少需要配置：
+
+- 邮箱池
+- 代理
+- workspace ID
+
+执行完整流水线：
 
 ```bash
-chatgpt-register run -c config.yaml -n 10 -t 3 --workspace-id <workspace-uuid> -v
+chatgpt-register run -c config.yaml -n 6 -t 3 --workspace-id <workspace-uuid> -v
 ```
 
-默认会在 `runs/` 下创建本次运行目录：
+参数说明：
 
-```text
-runs/
-  20260706-093012_10_accounts/
-    registered_accounts.json
-    sub2api_bundle.json
-    test_run.log
-```
+- `-n 6`：本次注册 6 个账号
+- `-t 3`：每个阶段最多使用 3 个 worker
+- `--workspace-id`：目标 workspace UUID
+- `-v`：输出详细日志
 
-邮箱/别名使用状态保存在共享的 `data/outlook_token_state.json`，用于避免后续运行重复使用已经消耗过的 Outlook 邮箱或别名。
+## 最小示例：1 个 Outlook 邮箱注册 6 个账号
 
-### 最简单：1 个 Outlook 邮箱注册 6 个号
-
-只填 1 个 Outlook 邮箱，开启别名，然后跑 `-n 6`。
-
-1. 生成配置：
-
-```powershell
-cd D:\Desktop\注册机开源
-python -m chatgpt_register_sub2api.cli init
-```
-
-2. 打开 `config.yaml`，填写一个 Outlook 邮箱，并开启别名：
-
-```yaml
-mail:
-  providers:
-    - type: outlook_token
-      enable: true
-      mode: auto
-      alias_enabled: true
-      alias_limit_per_mailbox: 6
-      mailboxes: |
-        你的邮箱@outlook.com----邮箱密码----client_id----refresh_token
-```
-
-3. 填代理和 workspace ID：
-
-```yaml
-proxy:
-  url: "socks5://127.0.0.1:10808"
-
-workspace:
-  enabled: true
-  ids:
-    - "你的workspace-id"
-  route: k12_request
-  re_login_enabled: false
-```
-
-4. 一次跑 6 个：
-
-```powershell
-python -m chatgpt_register_sub2api.cli run -c .\config.yaml -n 6 -t 3 --workspace-id 你的workspace-id -v
-```
-
-它会依次使用：
-
-```text
-你的邮箱@outlook.com
-你的邮箱+1@outlook.com
-你的邮箱+2@outlook.com
-你的邮箱+3@outlook.com
-你的邮箱+4@outlook.com
-你的邮箱+5@outlook.com
-```
-
-结果在 `runs\时间戳_6_accounts\`，其中 `sub2api_bundle.json` 就是导出的结果。
-
-## 配置示例
-
-以 `config.example.yaml` 为模板。下面都是占位示例，不要把真实账号提交到仓库。
-
-```yaml
-mail:
-  providers:
-    - type: outlook_token
-      enable: true
-      label: Outlook Pool
-      mode: auto
-      imap_host: outlook.office365.com
-      message_limit: 10
-      alias_enabled: false
-      alias_limit_per_mailbox: 6
-      mailboxes: |
-        user1@outlook.com----password1----client_id_1----refresh_token_1
-        user2@hotmail.com----password2----client_id_2----refresh_token_2
-    - type: gmail_oauth
-      enable: false
-      label: Gmail OAuth Pool
-      imap_host: imap.gmail.com
-      message_limit: 10
-      mailboxes: |
-        user1@gmail.com----google_client_id----google_client_secret----google_refresh_token
-
-proxy:
-  url: "socks5://127.0.0.1:1080"
-  flaresolverr_url: ""
-
-registration:
-  threads: 3
-  total: 10
-
-parallel:
-  join_threads: 3
-  refresh_threads: 3
-  login_threads: 1
-
-workspace:
-  enabled: true
-  ids:
-    - "your-workspace-uuid"
-  route: k12_request
-  re_login_enabled: false
-  export_plan_type: k12
-  max_retries: 3
-  retry_backoff_ms: 5000
-
-sub2api:
-  enabled: true
-  output_file: "sub2api_bundle.json"
-  require_team_tokens: auto
-
-output:
-  archive_runs: true
-  runs_dir: runs
-
-logging:
-  level: INFO
-  file: "test_run.log"
-```
-
-## 邮箱池格式
-
-Outlook token 池：
-
-```text
-email----password----client_id----refresh_token
-```
-
-Gmail OAuth 池：
-
-```text
-email----client_id----client_secret----refresh_token
-```
-
-## Outlook 别名
-
-可以在 Outlook provider 或全局 mail 配置里开启别名：
-
-```yaml
-alias_enabled: true
-alias_limit_per_mailbox: 6
-```
-
-当 `alias_limit_per_mailbox: 6` 时，一个主邮箱最多对应 6 个注册地址：
+Outlook 支持 plus alias。开启别名后，一个主邮箱可以依次用于：
 
 ```text
 user@outlook.com
@@ -213,60 +106,186 @@ user+4@outlook.com
 user+5@outlook.com
 ```
 
-验证码仍然从主 Outlook 邮箱读取。状态文件会按具体别名记录使用情况，所以后续运行不会重复使用同一个别名。
+配置示例：
+
+```yaml
+mail:
+  providers:
+    - type: outlook_token
+      enable: true
+      mode: auto
+      alias_enabled: true
+      alias_limit_per_mailbox: 6
+      mailboxes: |
+        user@outlook.com----mail_password----client_id----refresh_token
+
+proxy:
+  url: "socks5://127.0.0.1:10808"
+
+workspace:
+  enabled: true
+  ids:
+    - "your-workspace-uuid"
+  route: k12_request
+  re_login_enabled: false
+```
+
+运行：
+
+```bash
+chatgpt-register run -c config.yaml -n 6 -t 3 --workspace-id <workspace-uuid> -v
+```
+
+结果文件位于：
+
+```text
+runs/YYYYMMDD-HHMMSS_6_accounts/sub2api_bundle.json
+```
+
+## 配置说明
+
+完整示例见 `config.example.yaml`。下面是主要配置项。
+
+### 邮箱池
+
+Outlook token 池格式：
+
+```text
+email----password----client_id----refresh_token
+```
+
+Gmail OAuth 池格式：
+
+```text
+email----client_id----client_secret----refresh_token
+```
+
+### Outlook 别名
+
+```yaml
+alias_enabled: true
+alias_limit_per_mailbox: 6
+```
+
+含义：
+
+- `alias_enabled`：是否启用 Outlook plus alias
+- `alias_limit_per_mailbox`：每个主邮箱最多使用多少个注册地址，包含主邮箱本身
+
+验证码仍从主 Outlook 邮箱读取；注册邮箱地址则按具体别名区分。
+
+### Workspace
+
+```yaml
+workspace:
+  enabled: true
+  ids:
+    - "your-workspace-uuid"
+  route: k12_request
+  re_login_enabled: false
+  export_plan_type: k12
+```
+
+常用 route：
+
+- `accept`
+- `request`
+- `k12_request`
+
+默认推荐通过 refresh/check 确认账号当前 workspace 上下文，再导出 Sub2API JSON。
+
+### 输出归档
+
+```yaml
+output:
+  archive_runs: true
+  runs_dir: runs
+```
+
+开启后，完整 `run` 会将本次结果写入独立目录，避免根目录堆积运行结果。
 
 ## 命令
 
 | 命令 | 说明 |
 | --- | --- |
-| `init` | 生成 `config.yaml` |
-| `register` | 只注册账号 |
+| `init` | 生成默认 `config.yaml` |
+| `register` | 只执行注册 |
 | `join-workspace` | 对已有账号执行 workspace 加入/申请 |
 | `refresh` | 刷新 token 并检查账号/workspace 上下文 |
 | `login-team` | 实验性 team/workspace 重新登录流程 |
-| `export` | 把已有账号记录导出为 Sub2API JSON |
-| `run` | 完整流水线：注册 -> 加入 workspace -> refresh/check -> export |
+| `export` | 将已有账号记录导出为 Sub2API JSON |
+| `run` | 完整流水线：register -> join -> refresh/check -> export |
 
-常用示例：
+示例：
 
 ```bash
-chatgpt-register run -n 10 -t 5 -v
-chatgpt-register refresh -i registered_accounts.json --workspace-id <workspace-uuid> -t 5 -v
-chatgpt-register export -i registered_accounts.json -o sub2api_bundle.json -v
+chatgpt-register register -c config.yaml -n 6 -t 3 -v
+chatgpt-register join-workspace -c config.yaml -i registered_accounts.json --workspace-id <workspace-uuid> -t 5 -v
+chatgpt-register refresh -c config.yaml -i registered_accounts.json --workspace-id <workspace-uuid> -t 5 -v
+chatgpt-register export -c config.yaml -i registered_accounts.json -o sub2api_bundle.json -v
+```
+
+## 复用已有账号到其他 Workspace
+
+邮箱状态文件只影响“是否还能用某个邮箱/别名注册新账号”，不影响已经注册出的账号继续加入其他 workspace。
+
+复用已有账号时，不需要重新注册，直接使用已有 `registered_accounts.json`：
+
+```bash
+chatgpt-register join-workspace -c config.yaml -i registered_accounts.json --workspace-id <new-workspace-uuid> -t 5 -v
+chatgpt-register refresh -c config.yaml -i registered_accounts.json --workspace-id <new-workspace-uuid> -t 5 -v
+chatgpt-register export -c config.yaml -i registered_accounts.json -o sub2api_bundle.json -v
 ```
 
 ## 输出文件
 
-开启 `output.archive_runs: true` 后，完整 `run` 会写入：
+常见输出：
 
-```text
-runs/YYYYMMDD-HHMMSS_<账号数量>_accounts/
-```
+- `registered_accounts.json`：注册成功的账号记录
+- `sub2api_bundle.json`：Sub2API 兼容 bundle
+- `test_run.log`：运行日志
+- `data/outlook_token_state.json`：邮箱/别名状态
 
-常见文件：
+默认情况下，完整 `run` 的前三个文件会进入 `runs/YYYYMMDD-HHMMSS_<count>_accounts/`。
 
-- `registered_accounts.json`：本次运行生成的账号记录
-- `sub2api_bundle.json`：Sub2API 格式 bundle
-- `test_run.log`：当 `logging.file` 是相对路径时，会一起放进本次运行目录
+## 开源脱敏清单
 
-共享状态文件：
+公开仓库建议只保留：
 
-- `data/outlook_token_state.json`：邮箱和别名的 used/failed/in_use 状态
+- `chatgpt_register_sub2api/`
+- `README.md`
+- `pyproject.toml`
+- `.gitignore`
+- `config.example.yaml`
+
+不要提交：
+
+- `config.yaml` 或 `config.local.yaml`
+- `data/`
+- `runs/`
+- `registered_accounts*.json`
+- `sub2api*.json`
+- `*.log`
+- `test_run*.log`
+- `__pycache__/`
+- `.pytest_cache/`
+- 虚拟环境和构建产物
+
+发布前建议扫描敏感内容：
 
 ```bash
 rg -n "outlook.com|refresh_token|access_token|id_token|session_token|workspace" .
 ```
 
-示例配置里的占位字段可以保留；真实邮箱行、OAuth token、导出 JSON、workspace ID 不要保留。
+占位示例可以保留；真实邮箱、OAuth token、导出 JSON、workspace ID 不应出现在公开仓库中。
 
 ## 注意事项
 
-- 只在你有权限使用的邮箱和 workspace 上运行。
-- `workspace.route` 支持 `accept`、`request`、`k12_request`。
+- 请只使用你有权访问的邮箱、账号和 workspace。
+- 并发不宜过高，过高可能触发邮箱服务或目标服务的限制。
+- `login-team` 仍属于实验性流程；默认流水线使用 refresh/check 获取工作空间上下文。
 - `require_team_tokens: auto` 会跟随 `workspace.re_login_enabled`。
-- 如果关闭 `workspace.re_login_enabled`，导出会依赖 `/accounts/check` 刷新的账号上下文。
-- 并发建议保守设置。过高并发可能触发邮箱服务或目标服务的限制。
 
 ## 致谢
 
-感谢 [LINUX DO](https://linux.do/) 社区的交流与支持。
+核心注册流程参考了社区围绕 `chatgpt2api` 的实现，并在此基础上增加了 workspace 上下文处理、Outlook 别名支持和 Sub2API 导出能力。
